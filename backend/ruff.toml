@@ -1,0 +1,18 @@
+# Ruff configuration for the PartyPlay backend.
+# Keep the rule set pragmatic: correctness + import hygiene, without forcing
+# a large reformat of the existing codebase.
+
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI's Depends()/Query()/Cookie() in argument defaults is idiomatic.
+ignore = ["B008"]
+
+[lint.per-file-ignores]
+# These files intentionally import after configuring the environment/ini.
+"alembic/env.py" = ["E402"]
+"tests/conftest.py" = ["E402"]
+# Migrations are historical artefacts; don't rewrite applied revision files.
+"alembic/versions/*" = ["UP", "E501"]
