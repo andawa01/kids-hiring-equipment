@@ -98,7 +98,11 @@ the branch.
 | Job | What it does | Why |
 |---|---|---|
 | `lint` | `ruff check .` | Catches unused imports, import order, real bugs (bugbear), pyupgrade |
-| `test` | `alembic upgrade head` → `alembic check` → `pytest` | Runs the real schema via migrations, fails on model/migration drift, then runs the suite against a real PostgreSQL 16 |
+| `test` | `alembic upgrade head` → `alembic check` → `pytest --cov=app --cov-fail-under=85` | Runs the real schema via migrations, fails on model/migration drift, runs the suite against PostgreSQL 16, and enforces a coverage floor |
+| `gitleaks` | `gitleaks/gitleaks-action@v2` over the full history | Blocks commits that contain credentials/tokens |
+
+The coverage floor is **85%** (current baseline is ~89%). Raise it over time as
+untested paths get covered; lower it only with an explicit decision.
 
 Key detail: tests **do not** build the schema with `create_all`; CI applies the
 migrations first, so migration drift is caught (see gap `TEST-1` in
@@ -116,8 +120,14 @@ cd backend
 # TEST_DATABASE_URL in backend/.env.
 docker compose -f ../docker-compose.yml up -d db
 .venv/bin/alembic upgrade head
-.venv/bin/pytest
+.venv/bin/pytest --cov=app --cov-report=term-missing --cov-fail-under=85
+
+# Secret scan (scans tracked git history; untracked backend/.env is ignored)
+gitleaks git . --no-banner --redact -v
 ```
+
+> `gitleaks dir .` also scans **untracked** files, so it will flag your local
+> `backend/.env`. That is expected — use `gitleaks git .` for the same view CI has.
 
 ---
 
@@ -155,12 +165,20 @@ This gives independent repositories without losing type safety across the bounda
 
 ---
 
-## 8. Suggested next CI increments
+## 8. Notes on the security scan
+
+- `gitleaks-action` is free for **personal** repositories. If the repo is ever
+  moved under a GitHub **organization**, set a `GITLEAKS_LICENSE` secret
+  (the action requires it for org accounts).
+- The scan runs with full history (`fetch-depth: 0`) so a secret that was
+  committed and later deleted is still caught.
+- Never commit `backend/.env`; it is ignored by `.gitignore`.
+
+## 9. Suggested next CI increments
 
 Add these as separate PRs so the pipeline stays green:
 
-1. **Coverage gate** — `pytest --cov=app --cov-fail-under=70`.
-2. **Type checking** — `mypy app` (start permissive, tighten over time).
-3. **Secret scanning** — `gitleaks` on PRs.
-4. **Dependency audit** — `pip-audit`.
-5. **Build check** — `docker build` once the app Dockerfile exists (gap `OPS-3`).
+1. **Type checking** — `mypy app` (start permissive, tighten over time).
+2. **Dependency audit** — `pip-audit`.
+3. **Build check** — `docker build` once the app Dockerfile exists (gap `OPS-3`).
+4. **Contract artifact** — publish `openapi.json` for the frontend to generate its client.
